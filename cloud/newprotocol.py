@@ -102,6 +102,7 @@ if __name__ == '__main__':
     token = from_base64(
         '5Upp2zai1hr+b+bCLi23GOOhfz2grj+aXHm6+7m7u808a18V5R05TJFwquzr/kwrDq+GjVE7nMcXxZJnt1yJLQ=='
     )    
+    print(len(token))
 
     # id length: 8 bytes
     # hash length: 32 bytes
@@ -198,11 +199,17 @@ if __name__ == '__main__':
     '''
 
     complaint_send_with_data = from_base64(
-        'Fi48X5Un37Yy1f3A8jRutx8ibiNO54g3rvxUykSRystMmz/c2FxRtGMlODXwDOE3Hx3ST8iHiJ30zS41xHjtfP5Tu1D5twvZSZ3sI/jN3CbLcmT3kGYoH/Vn0TyhbH7h6MelL8huDhZGbvhUzx02hdV7RvCcYRcXtkg/hgQtQ7KBUB6xUZb+Xvy0gbfYu3aeO6Bg+7ljRVNAmmsdZkvPtFkXDCKUAPeRV/z5tx9Nt7+f9TC4uYaEByEw/tcVZ2aejxiIp0gs3ttNnC7QRCv1LYsyqg0D3BF/IOVLO22jLVn2fSwLNds6YjGzPoCYONII0UUmJ5GOvtrauc3wsnJQJY9FZ9lcR1D796VoLUZha2UgcGF5bG9hZCB5bw=='
+        'Fi48X5Un37Yy1f3A8jRutx8ibiNO54g3rvxUykSRystMmz/c2FxRtGMlODXwDOE3Hx3ST8iHiJ30zS41xHjtfP5Tu1D5twvZSZ3sI/jN3CbLcmT3kGYoH/Vn0TyhbH7h6MelL8huDhZGbvhUzx02hVfNVrjBHbCQgmBSbhJDNizFUiBO7TgKnIV7knmcH0q/3mVNncmPjveNmVOz4nZkP4X2szvC+ETwjY4UmzWCXeu3kC+4Ap9BCJDS8SwsTge3X+V7NI6GiMucVtr6cSSgqQKLp2MdrHWQfD1tTQhDPWSGjyNmdcwvHnGK/HcxHNuzqnT+3X/8CQn/bA2AesPmu6Mm1PeYnz4d6NYACA=='
+    )
+    complaint_payload = from_base64(
+        'RmFrZSBwYXlsb2FkIHlv'
     )
 
     complaint_send_with_token = from_base64(
         'Fi48X5Un37Yy1f3A8jRutx8ibiNO54g3rvxUykSRystMmz/c2FxRtGMlODXwDOE3Hx3ST8iHiJ30zS41xHjtfP5Tu1D5twvZSZ3sI/jN3CbLcmT3kGYoH/Vn0TyhbH7h6MelL8huDhZGbvhUzx02hdV7RvCcYRcXtkg/hgQtQ7KBUB6xUZb+Xvy0gbfYu3aeO6Bg+7ljRVNAmmsdZkvPtFkXDCKUAPeRV/z5tx9Nt7+f9TC4uYaEByEw/tcVZ2aejxiIp0gs3ttNnC7QWBZ/8AQIOK0SpDO0uKKGySiKH29R+jCxgo82fN4CidY6+JXNqJyHlYBvS+ZZooYZtTFny1yDq640KP5FgwJJf12655aCXCRTZFo9NxYtzU0z+MOXfounOuUFo2cpM01XroxDlyrVQDeWtZYguqytsdk9wLGD4V1tYz9hpu1AR24='
+    )
+    complaint_tokensig = from_base64(
+        'rFg5wbTxUSphFKxoObJK0NcAb02W8SeO0ZmVFkSTVxukN16i3eTosA2Pp0gP5Lgy8Yp+5kYEK10UB0rRO+FMmQ=='
     )
 
     '''
@@ -214,34 +221,43 @@ if __name__ == '__main__':
         protocol_nonce +
         hash(payload) +
         encrypted_token_bytes +
-        sign(privatekey, protocol_nonce + hash(payload) + encrypted_token_bytes) +
-        payload
+        sign(privatekey, protocol_nonce + hash(payload) + encrypted_token_bytes)
     )
 
     print('complaint payload with sensor data:')
-    print('\t', to_base64(complaint_payload_with_sensor_data))
+    print('\tcomplaint:', to_base64(complaint_payload_with_sensor_data))
+    print('\tpayload:', to_base64(payload))
 
     complaint_payload_with_token = (
         complaint_token +
         protocol_nonce +
         hash(payload) +
         encrypted_token_bytes +
-        sign(privatekey, protocol_nonce + hash(payload) + encrypted_token_bytes) +
-        sign(privatekey, protocol_nonce + hash(payload) + token)
+        sign(privatekey, protocol_nonce + hash(payload) + encrypted_token_bytes)
     )
 
     print('complaint payload with token:')
-    print('\t', to_base64(complaint_payload_with_token))
+    print('\tcomplaint:', to_base64(complaint_payload_with_token))
+    print('\ttokensig:', to_base64(sign(privatekey, protocol_nonce + hash(payload) + token)))
     '''
+
+    blinded_token = from_base64(
+        'oOI6NTDP78eok3967DLXkh0ShV5vnPoJN7N5Tx4+cV/AB2VTXBLsiJENQXx+uCtDjHb/F50J5QJHzm7UGFQBDw7PSPjiklmT7uXCJn+CaVSam5sAPTzm7/cPGjbfOvgBaqDXmUF06qcc2JG3xZsm3bQ9TTWib9bYWcFFiHh+kVTi8q4KarxOcaiEqWHFAFFfWOMLaqWC3Y22pllF4I0tdg=='
+    )
 
     '''
     # get the public params from the server, this is a standin
-    with open('complaints-keypair.bin', 'rb') as f:
+    with open('complaint_keypair.bin', 'rb') as f:
         complaints_keypair = f.read()
     complaints_public_params = tokenlib.get_public_params(complaints_keypair)
 
     blinded_token = tokenlib.generate_token(complaints_public_params)
 
+    print('blinded token:')
+    print('\t', to_base64(blinded_token))
+    '''
+
+    '''
     # get the blinded token to the server to get signed
     signed_blinded_token = tokenlib.sign_token(complaints_keypair, blinded_token)
 

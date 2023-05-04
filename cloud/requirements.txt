@@ -2,3 +2,4 @@ fastapi
 maturin
 requests
 uvicorn[standard]
+pycryptodome

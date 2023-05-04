@@ -12,6 +12,7 @@ TOKEN_REQUEST_SIZE = 100
 provider_url = os.environ.get("PROVIDER_URL") 
 public_params = None
 unused_tokens = []
+payload_hashes = set()
 
 
 def get_public_params() -> bytes:
@@ -54,13 +55,44 @@ def deliver(payload) -> str:
     if len(unused_tokens) == 0:
         unused_tokens += get_more_tokens(TOKEN_REQUEST_SIZE)
 
-    ret_token = unused_tokens.pop()
-    return ret_token
+    ret_token = util.decode_bytes(unused_tokens.pop())
+    protocol_nonce_bytes = 16
+    protocol_nonce = util.get_random_bytes(protocol_nonce_bytes)
+
+    ret_sig = util.sign(util.load_private_key(), protocol_nonce + ret_token)
+    
+    return util.encode_bytes(protocol_nonce + ret_token + ret_sig)
+
 
 def pre_deliver(payload) -> str:
 
     global public_params
     global unused_tokens
     global provider_url
+    global payload_hashes
 
-    raise NotImplementedError
+    payload_bytes = util.decode_bytes(payload["data"])
+
+    protocol_nonce_bytes = 16
+    sha256_bytes = 32
+
+    sensor_id = payload_bytes[:16]
+    payload_hash = payload_bytes[16:16+sha256_bytes]
+    sig = payload_bytes[16+sha256_bytes:]
+
+    is_in_set = payload_hash in payload_hashes
+
+    protocol_nonce = util.get_random_bytes(protocol_nonce_bytes)
+    
+    if len(unused_tokens) == 0:
+        unused_tokens += get_more_tokens(TOKEN_REQUEST_SIZE)
+
+    aes_key = util.load_aes_key()
+    token = util.decode_bytes(unused_tokens.pop())
+    encrypted_token = util.encrypt_aes(aes_key, token)
+    encrypted_token_bytes = encrypted_token[0] + encrypted_token[1] + encrypted_token[2]
+
+    return_payload = protocol_nonce + payload_hash + encrypted_token_bytes
+    return_sig = util.sign(util.load_private_key(), return_payload)
+
+    return util.encode_bytes(return_payload + return_sig)
