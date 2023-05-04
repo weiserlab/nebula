@@ -11,6 +11,7 @@ from locust import HttpUser, task, between
 with open('../keypair.bin', 'rb') as f:
     keypair = f.read()
 num_tokens = 20000
+tokens_per_req = 700
 tokens_list = [get_token(keypair) for x in range(num_tokens)]
 
 class TokenRedemption(HttpUser):
@@ -22,12 +23,12 @@ class TokenRedemption(HttpUser):
             'Content-Type': 'application/json',
         }
 
-        start_index = random.randint(0, num_tokens - 300)
-        sampled_tokens = tokens_list[start_index:start_index + 300]
+        start_index = random.randint(0, num_tokens - tokens_per_req)
+        sampled_tokens = tokens_list[start_index:start_index + tokens_per_req]
 
         data = {
-            # 'tokens': ['ztuAgIfPmgZMpZcarGRwQXfuTpAPuRXIU5LUNdVQMr3Y9YlgwJIwueNYqU3cnibdXQzTHB/J/YcV26iB49i+Uw==' for x in range(300)]
-            # 'tokens': [get_token(keypair) for x in range(300)]
+            # 'tokens': ['ztuAgIfPmgZMpZcarGRwQXfuTpAPuRXIU5LUNdVQMr3Y9YlgwJIwueNYqU3cnibdXQzTHB/J/YcV26iB49i+Uw==' for x in range(tokens_per_req)]
+            # 'tokens': [get_token(keypair) for x in range(tokens_per_req)]
             'tokens':sampled_tokens
         }
 
