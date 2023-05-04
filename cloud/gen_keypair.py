@@ -5,5 +5,10 @@ import tokenlib
 
 keypair = tokenlib.generate_keypair()
 
+'''
 with open('keypair.bin', 'wb') as f:
+    f.write(keypair)
+'''
+
+with open('complaints-keypair.bin', 'wb') as f:
     f.write(keypair)

@@ -1,4 +1,4 @@
-use anonymous_tokens::sk::ppnozk::{KeyPair, PublicParams, Token, TokenBlinded, TokenSigned};
+use anonymous_tokens::sk::pp::{KeyPair, PublicParams, Token, TokenBlinded, TokenSigned};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
