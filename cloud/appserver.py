@@ -56,3 +56,11 @@ def deliver(payload) -> str:
 
     ret_token = unused_tokens.pop()
     return ret_token
+
+def pre_deliver(payload) -> str:
+
+    global public_params
+    global unused_tokens
+    global provider_url
+
+    raise NotImplementedError

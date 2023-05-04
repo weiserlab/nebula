@@ -36,7 +36,7 @@ ENV SERVER_MODE=provider
 
 # Start the Uvicorn server with the specified server mode
 CMD if [ "$SERVER_MODE" = "provider" ] ; then \
-        uvicorn main:app --host 0.0.0.0 --port $SERVER_PORT --ssl-keyfile=key.pem --ssl-certfile=cert.pem --workers 400; \
+        uvicorn main:app --host 0.0.0.0 --port $SERVER_PORT --ssl-keyfile=key.pem --ssl-certfile=cert.pem --workers 257; \
     else \
         uvicorn main:app --host 0.0.0.0 --port $SERVER_PORT --ssl-keyfile=key.pem --ssl-certfile=cert.pem --workers 257; \
     fi

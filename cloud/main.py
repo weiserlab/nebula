@@ -60,3 +60,18 @@ async def redeem_tokens(request: Request):
 async def deliver(request: Request):
     return await make_threaded_call(request, appserver.deliver, should_be_provider=False)
 
+@app.post("/pre_deliver")
+async def pre_deliver(request: Request):
+    return await make_threaded_call(request, appserver.pre_deliver, should_be_provider=False)
+
+@app.post("/query_provider")
+async def query_provider(request: Request):
+    return await make_threaded_call(request, provider.query_provider, should_be_provider=True)
+
+@app.post("/complain")
+async def complain(request: Request):
+    return await make_threaded_call(request, provider.complain, should_be_provider=True)
+
+@app.get("/complaint_public_params")
+async def complaint_public_params(request: Request):
+    return await make_threaded_call(request, provider.get_complaint_public_params, should_be_provider=True)

@@ -30,7 +30,7 @@ class StringSet:
         shard = self._get_shard(key)
         return shard.add_if_not_exists(key)
 
-    def add_new_elements(self, keys, max_workers=128):
+    def add_new_elements(self, keys, max_workers=256):
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             results = executor.map(self.add_if_not_exists, keys)
         new_keys_count = sum(1 for result in results if result)
