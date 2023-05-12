@@ -1,2 +1,2 @@
-# galaxy
-Privacy Preserving Data Mule System
+# Nebula
+A Privacy-First Platform for Data Backhaul
