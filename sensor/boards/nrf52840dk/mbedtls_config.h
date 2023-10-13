@@ -1263,7 +1263,7 @@
  *
  * Comment this macro to disable support for truncated HMAC in SSL
  */
-#define MBEDTLS_SSL_TRUNCATED_HMAC
+//#define MBEDTLS_SSL_TRUNCATED_HMAC
 
 /**
  * \def MBEDTLS_THREADING_ALT
@@ -2207,6 +2207,7 @@
  * This module adds support for SHA-224 and SHA-256.
  * This module is required for the SSL/TLS 1.2 PRF function.
  */
+#define MBEDTLS_SHA224_C
 #define MBEDTLS_SHA256_C
 
 /**

@@ -18,7 +18,7 @@
 #include "nrf_drv_rng.h"
 #include "nrf_drv_timer.h"
 #include "simple_ble.h"
-#include "mbedtls/config.h"
+//#include "mbedtls/config.h"
 #include "mbedtls/platform.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/ctr_drbg.h"
@@ -471,7 +471,9 @@ int main(void) {
                                 (const unsigned char *) key_data,
                                 sensor_cli_key_len,
                                 NULL,
-                                0);
+                                0,
+                                mbedtls_ctr_drbg_random,
+                                &ctr_drbg);
     if (ret != 0) {
         printf(" failed\n  !  mbedtls_pk_parse_key returned %d\n\n", ret);
         
