@@ -1041,51 +1041,56 @@ void app_main() {
     
     printf("started connection\n");
 
+    while (true) {
+        printf(".");
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+
     //mbedtls handshake
-    mbedtls_stuff();
+    //mbedtls_stuff();
 
     //set up packet pointers to beginning of big_data
-    for (int i = 0; i < MAX_PAYLOADS; i++) {
-        payloads[i] = big_data;
-    }
+    // for (int i = 0; i < MAX_PAYLOADS; i++) {
+    //     payloads[i] = big_data;
+    // }
 
-    num_payloads = 0; // initialize the number of payloads to 0, TODO magic number
-    while(num_payloads < 10) { // get data and send data to either server or back to sensor
+    // num_payloads = 0; // initialize the number of payloads to 0, TODO magic number
+    // while(num_payloads < 10) { // get data and send data to either server or back to sensor
 
-        //waits for BLE connection to continue 
-        // while (ble_gap_conn_active() == 0) {
-        //     //wait  
-        //     printf("waiting for BLE connection\n");
-        //     vTaskDelay(1000 / portTICK_PERIOD_MS);
-        // }
+    //     //waits for BLE connection to continue 
+    //     // while (ble_gap_conn_active() == 0) {
+    //     //     //wait  
+    //     //     printf("waiting for BLE connection\n");
+    //     //     vTaskDelay(1000 / portTICK_PERIOD_MS);
+    //     // }
 
-        //waiting for data transfer 
-        if (metadata_state[2] != 2) {
-            //printf("waiting for data transfer\n");
-            //printf("metadata_state[2] = %d\n", metadata_state[2]);
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
-            continue;
-        }
-        else {
-            printf("data transfer complete\n");
-            //copy to big buffer using payload pointers
-            memcpy(payloads[num_payloads], sensor_state_data, CHUNK_SIZE*metadata_state[0]); 
-            num_payloads++;
+    //     //waiting for data transfer 
+    //     if (metadata_state[2] != 2) {
+    //         //printf("waiting for data transfer\n");
+    //         //printf("metadata_state[2] = %d\n", metadata_state[2]);
+    //         vTaskDelay(1000 / portTICK_PERIOD_MS);
+    //         continue;
+    //     }
+    //     else {
+    //         printf("data transfer complete\n");
+    //         //copy to big buffer using payload pointers
+    //         memcpy(payloads[num_payloads], sensor_state_data, CHUNK_SIZE*metadata_state[0]); 
+    //         num_payloads++;
 
-            // TODO: do we have data to write to the sensor?
-            // TODO: is it time to upload our data? 
-            // Go back to waiting for data transfer state
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
-            metadata_state[0] = 0;
-            metadata_state[1] = 0;
-            metadata_state[2] = 0;
-            ble_write_long(&ble_conn_handle, metadata_state, 3);
+    //         // TODO: do we have data to write to the sensor?
+    //         // TODO: is it time to upload our data? 
+    //         // Go back to waiting for data transfer state
+    //         vTaskDelay(1000 / portTICK_PERIOD_MS);
+    //         metadata_state[0] = 0;
+    //         metadata_state[1] = 0;
+    //         metadata_state[2] = 0;
+    //         ble_write_long(&ble_conn_handle, metadata_state, 3);
              
-        }
-    }
+    //     }
+    // }
 
-    //TODO: disconnect and wait to send data to server
-    printf("disconnect BLE\n");
+    // //TODO: disconnect and wait to send data to server
+    // printf("disconnect BLE\n");
     nimble_port_stop();
 
     

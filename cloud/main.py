@@ -11,6 +11,7 @@ import provider  # Assuming provider.py is in the same directory
 
 
 app = FastAPI()
+mode = os.environ.get("SERVER_MODE") 
 
 
 class FunctionThread(threading.Thread):
@@ -25,7 +26,7 @@ class FunctionThread(threading.Thread):
         self.result = self.target(*self.args, **self.kwargs)
 
 
-async def make_threaded_call(request: Request, fn, should_be_provider: bool):
+async def make_threaded_call(request: Request, fn):
 
     params = dict(request.query_params)
     body_json = None
@@ -44,34 +45,42 @@ async def make_threaded_call(request: Request, fn, should_be_provider: bool):
 
     return {"result": thread.result}
 
-@app.get("/public_params")
-async def public_params(request: Request):
-    return await make_threaded_call(request, provider.get_public_params, should_be_provider=True)
+@app.get("/")
+async def root():
+    return {"status": f"{mode} running"}
 
-@app.post("/sign_tokens")
-async def sign_tokens(request: Request):
-    return await make_threaded_call(request, provider.sign_tokens, should_be_provider=True)
+if mode == "provider":
 
-@app.post("/redeem_tokens")
-async def redeem_tokens(request: Request):
-    return await make_threaded_call(request, provider.redeem_tokens, should_be_provider=True)
+    @app.get("/public_params")
+    async def public_params(request: Request):
+        return await make_threaded_call(request, provider.get_public_params)
 
-@app.post("/deliver")
-async def deliver(request: Request):
-    return await make_threaded_call(request, appserver.deliver, should_be_provider=False)
+    @app.post("/sign_tokens")
+    async def sign_tokens(request: Request):
+        return await make_threaded_call(request, provider.sign_tokens)
 
-@app.post("/pre_deliver")
-async def pre_deliver(request: Request):
-    return await make_threaded_call(request, appserver.pre_deliver, should_be_provider=False)
+    @app.post("/redeem_tokens")
+    async def redeem_tokens(request: Request):
+        return await make_threaded_call(request, provider.redeem_tokens)
 
-@app.post("/query_provider")
-async def query_provider(request: Request):
-    return await make_threaded_call(request, provider.query_provider, should_be_provider=True)
+    @app.post("/query_provider")
+    async def query_provider(request: Request):
+        return await make_threaded_call(request, provider.query_provider)
 
-@app.post("/complain")
-async def complain(request: Request):
-    return await make_threaded_call(request, provider.complain, should_be_provider=True)
+    @app.post("/complain")
+    async def complain(request: Request):
+        return await make_threaded_call(request, provider.complain)
 
-@app.get("/complaint_public_params")
-async def complaint_public_params(request: Request):
-    return await make_threaded_call(request, provider.get_complaint_public_params, should_be_provider=True)
+    @app.get("/complaint_public_params")
+    async def complaint_public_params(request: Request):
+        return await make_threaded_call(request, provider.get_complaint_public_params)
+
+elif mode == "app":
+
+    @app.post("/deliver")
+    async def deliver(request: Request):
+        return await make_threaded_call(request, appserver.deliver)
+
+    @app.post("/pre_deliver")
+    async def pre_deliver(request: Request):
+        return await make_threaded_call(request, appserver.pre_deliver)

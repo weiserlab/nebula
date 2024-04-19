@@ -379,11 +379,13 @@ int main(void) {
     // put simple BLE up here so we can piggy-back on the app timer initialization
     simple_ble_app = simple_ble_init(&ble_config);
 
+    /*
     error_code = app_timer_create(&dtls_int_timer_id, APP_TIMER_MODE_SINGLE_SHOT, dtls_int_timer_handler);
     APP_ERROR_CHECK(error_code);
 
     error_code = app_timer_create(&dtls_fin_timer_id, APP_TIMER_MODE_SINGLE_SHOT, dtls_fin_timer_handler);
     APP_ERROR_CHECK(error_code);
+    */
 
     //error_code = app_timer_start(dtls_int_timer_id, APP_TIMER_TICKS(1000), NULL);
     //APP_ERROR_CHECK(error_code);
@@ -563,7 +565,7 @@ int main(void) {
         ble_conn_handle = simple_ble_app->conn_handle;
     }
 
-    printf("BLE connected, start mbedtls handshake\n");
+    printf("BLE connected\n");//, start mbedtls handshake\n");
 
     /*
     * MBEDTLS handshake
@@ -610,26 +612,32 @@ int main(void) {
             ble_conn_handle = simple_ble_app->conn_handle;
         }
 
-        if (metadata_state[2] == 2 ) {
-            printf("waiting for mule to send data back\n");
-            nrf_delay_ms(5000); // give em 5 seconds
-            metadata_state[0] = 0;
-            metadata_state[1] = 0;
-            metadata_state[2] = 0;
-            error_code = ble_write(metadata_state, 3, &metadata_state_char, 0);
-        }
-        else if (metadata_state[2] == 1) {
-            //already sending data
-        }
-        else {
-            // time to send some more data //todo make sensor state data
-            printf("time to send more!\n");
-            uint8_t data_test [1000];
-            error_code = ble_write_long(&ble_conn_handle, data, 1000);
-            printf("made it through sending data\n");
-            nrf_delay_ms(10000);
+        uint8_t data[CHUNK_SIZE];
+        error_code = ble_write(data, CHUNK_SIZE, &sensor_state_char, 0);
+        printf("  write returned %d\n", error_code);
+        printf("connected....doot doot....\n");
+        nrf_delay_ms(500);
 
-        }
+        // if (metadata_state[2] == 2 ) {
+        //     printf("waiting for mule to send data back\n");
+        //     nrf_delay_ms(5000); // give em 5 seconds
+        //     metadata_state[0] = 0;
+        //     metadata_state[1] = 0;
+        //     metadata_state[2] = 0;
+        //     error_code = ble_write(metadata_state, 3, &metadata_state_char, 0);
+        // }
+        // else if (metadata_state[2] == 1) {
+        //     //already sending data
+        // }
+        // else {
+        //     // time to send some more data //todo make sensor state data
+        //     printf("time to send more!\n");
+        //     uint8_t data_test [1000];
+        //     error_code = ble_write_long(&ble_conn_handle, data, 1000);
+        //     printf("made it through sending data\n");
+        //     nrf_delay_ms(10000);
+
+        // }
     }
 
  

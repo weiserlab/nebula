@@ -12,8 +12,18 @@ terraform {
       source = "hashicorp/random"
       version = "~> 3.5.0"
     }
+    acme = {
+      source = "vancluever/acme"
+      version = "~> 2.0"
+    }
+    aws = {
+      source = "hashicorp/aws"
+      version = "~> 4.67.0"
+    }
   }
 }
+
+// --- Setup GCP provider ---
 
 variable "default_region" {
   type = string
@@ -25,12 +35,23 @@ variable "default_zone" {
   default = "us-central1-a"
 }
 
+variable "client_email" {
+  type = string
+}
+
 provider "google" {
   project     = "opportunistic-networks-galaxy"
   region      = var.default_region
 }
 
+provider "aws" {
+  shared_credentials_files = [pathexpand("~/.aws/credentials")]
+  profile = "default"
+  region = "us-east-1"
+}
+
 // --- Store terraform state in GCP storage bucket ---
+
 resource "random_id" "bucket_prefix" {
   byte_length = 8
 }
@@ -41,152 +62,234 @@ resource "google_storage_bucket" "tfstate" {
   force_destroy = false
   storage_class = "STANDARD"
 }
-// --- End state storage ---
 
-data "google_iam_policy" "noauth" {
-  binding {
-    role = "roles/run.invoker"
-    members = [
-      "allUsers"
+// --- Setup ACME (e.g. Let's Encrypt) ---
+
+provider "acme" {
+  server_url = "https://acme-v02.api.letsencrypt.org/directory"
+}
+
+resource "tls_private_key" "reg_private_key" {
+  algorithm = "RSA"
+}
+
+resource "acme_registration" "reg" {
+  account_key_pem = tls_private_key.reg_private_key.private_key_pem
+  email_address   = "lab11@berkeley.edu"
+}
+
+resource "tls_private_key" "provider_private_key" {
+  algorithm   = "ECDSA"
+  ecdsa_curve = "P256"
+}
+
+resource "tls_cert_request" "provider_req" {
+  private_key_pem = tls_private_key.provider_private_key.private_key_pem
+  dns_names       = ["provider.nebula.lab11.org"]
+
+  subject {
+    common_name = "provider.nebula.lab11.org"
+  }
+}
+
+resource "acme_certificate" "provider_cert" {
+  account_key_pem         = acme_registration.reg.account_key_pem
+  certificate_request_pem = tls_cert_request.provider_req.cert_request_pem
+
+  // assumes lab11 credentials are being used
+  dns_challenge {
+    provider = "route53"
+  }
+}
+
+resource "tls_private_key" "appserver_private_key" {
+  algorithm   = "ECDSA"
+  ecdsa_curve = "P256"
+}
+
+resource "tls_cert_request" "appserver_req" {
+  private_key_pem = tls_private_key.appserver_private_key.private_key_pem
+  dns_names       = ["app.nebula.lab11.org"]
+
+  subject {
+    common_name = "app.nebula.lab11.org"
+  }
+}
+
+resource "acme_certificate" "appserver_cert" {
+  account_key_pem         = acme_registration.reg.account_key_pem
+  certificate_request_pem = tls_cert_request.appserver_req.cert_request_pem
+
+  // assumes lab11 credentials are being used
+  dns_challenge {
+    provider = "route53"
+  }
+}
+
+// --- Set up SSH, HTTP, and HTTPS firewall rules ---
+
+resource "google_compute_firewall" "allow_ssh" {
+  name    = "allow-ssh"
+  network = "default-galaxy-network"
+
+  allow {
+    protocol = "tcp"
+    ports    = ["22"]
+  }
+
+  source_ranges = ["0.0.0.0/0"]
+
+  target_tags = ["allow-ssh"]
+}
+
+resource "google_compute_firewall" "allow_http" {
+  name    = "allow-http"
+  network = "default-galaxy-network"
+
+  allow {
+    protocol = "tcp"
+    ports    = ["80"]
+  }
+
+  source_ranges = ["0.0.0.0/0"]
+
+  target_tags = ["allow-http"]
+}
+
+resource "google_compute_firewall" "allow_https" {
+  name    = "allow-https"
+  network = "default-galaxy-network"
+
+  allow {
+    protocol = "tcp"
+    ports    = ["443"]
+  }
+
+  source_ranges = ["0.0.0.0/0"]
+
+  target_tags = ["allow-https"]
+}
+
+// --- Provision docker image on provider and app server machines ---
+provider "docker" {
+  registry_auth {
+    address = "gcr.io"
+    username = "_json_key"
+    password = "${file(pathexpand("~/.creds/opportunistic-networks-galaxy-206a92151ad6.json"))}"
+  }
+}
+
+data "google_compute_image" "cos" {
+  family  = "cos-stable"
+  project = "cos-cloud"
+}
+
+data "docker_registry_image" "galaxy_cloud" {
+  name = "gcr.io/opportunistic-networks-galaxy/galaxy_cloud"
+}
+
+resource "docker_image" "galaxy_cloud" {
+  name = data.docker_registry_image.galaxy_cloud.name
+  pull_triggers = [data.docker_registry_image.galaxy_cloud.sha256_digest]
+}
+
+resource "google_compute_instance" "lab11_provider" {
+  name        = "lab11-provider"
+  machine_type = "e2-medium"
+  zone        = var.default_zone
+  allow_stopping_for_update = true
+
+  tags = ["allow-ssh", "allow-https"]
+
+  boot_disk {
+    initialize_params {
+      image = data.google_compute_image.cos.self_link
+      size = 100
+    }
+  }
+
+  network_interface {
+     network = "default-galaxy-network"
+     access_config {
+     }
+  }
+
+  metadata = {
+    gce-container-declaration = "spec:\n  containers:\n  - name: provider\n    image: ${docker_image.galaxy_cloud.name}\n    env:\n    - name: SERVER_MODE\n      value: provider\n    - name: SERVER_PORT\n      value: '443'\n    - name: PROVIDER_URL\n      value: provider.nebula.lab11.org\n    volumeMounts:\n    - name: certs\n      readOnly: true\n      mountPath: /certs\n    stdin: false\n    tty: false\n  volumes:\n  - name: certs\n    hostPath:\n      path: /tmp/certs\n  restartPolicy: Always\n"
+  }
+  metadata_startup_script = <<-EOF
+    echo "${docker_image.galaxy_cloud.repo_digest}" > /tmp/docker_image_name.txt
+    mkdir -p /tmp/certs
+    echo "${acme_certificate.provider_cert.certificate_pem}${acme_certificate.provider_cert.issuer_pem}" > /tmp/certs/cert.pem
+    echo "${tls_private_key.provider_private_key.private_key_pem}" > /tmp/certs/key.pem
+  EOF
+
+  service_account {
+    email = "1064507374211-compute@developer.gserviceaccount.com"
+    scopes = [
+      "https://www.googleapis.com/auth/devstorage.read_only", "https://www.googleapis.com/auth/logging.write", "https://www.googleapis.com/auth/monitoring.write", "https://www.googleapis.com/auth/service.management.readonly", "https://www.googleapis.com/auth/servicecontrol", "https://www.googleapis.com/auth/trace.append"
     ]
   }
 }
 
-resource "google_cloud_run_v2_service" "provider" {
-  name     = "provider"
-  location = var.default_region
-  labels = {
-    "galaxy-redis" = "true"
+resource "google_compute_instance" "lab11_app_server" {
+  name        = "lab11-app-server"
+  machine_type = "e2-medium"
+  zone        = var.default_zone
+  allow_stopping_for_update = true
+
+  tags = ["allow-ssh", "allow-https"]
+
+  boot_disk {
+    initialize_params {
+      image = data.google_compute_image.cos.self_link
+      size = 100
+    }
   }
 
-  template {
-    containers {
-      name = "provider"
-      image = "gcr.io/opportunistic-networks-galaxy/galaxy_cloud:latest"
-      env {
-        name = "SERVER_MODE"
-        value = "provider"
-      }
-      env {
-        name = "SERVER_PORT"
-        value = "443"
-      }
-      ports {
-        container_port = 443
-      }
-    }
-    scaling {
-      max_instance_count = 1
-    }
-    vpc_access {
-      connector = google_vpc_access_connector.galaxy_connector.id
-      egress = "PRIVATE_RANGES_ONLY"
-    }
-  }
-}
-
-resource "google_cloud_run_service_iam_policy" "provider-noauth" {
-  location = google_cloud_run_v2_service.provider.location
-  project  = google_cloud_run_v2_service.provider.project
-  service  = google_cloud_run_v2_service.provider.name
-
-  policy_data = data.google_iam_policy.noauth.policy_data
-}
-
-resource "google_cloud_run_v2_service" "appserver-1" {
-  name     = "appserver-1"
-  location = var.default_region
-  labels = {
-    "galaxy-redis" = "true"
+  network_interface {
+     network = "default-galaxy-network"
+     access_config {
+     }
   }
 
-  template {
-    containers {
-      name = "appserver"
-      image = "gcr.io/opportunistic-networks-galaxy/galaxy_cloud:latest"
-      env {
-        name = "SERVER_MODE"
-        value = "app"
-      }
-      env {
-        name = "SERVER_PORT"
-        value = "443"
-      }
-      env {
-        name = "PROVIDER_URL"
-        value = "${google_cloud_run_v2_service.provider.uri}"
-      }
-      ports {
-        container_port = 443
-      }
-    }
-    scaling {
-      max_instance_count = 1
-    }
-    vpc_access {
-      connector = google_vpc_access_connector.galaxy_connector.id
-      egress = "PRIVATE_RANGES_ONLY"
-    }
+  metadata = {
+    gce-container-declaration = "spec:\n  containers:\n  - name: appserver\n    image: ${docker_image.galaxy_cloud.name}\n    env:\n    - name: SERVER_MODE\n      value: app\n    - name: SERVER_PORT\n      value: '443'\n    - name: PROVIDER_URL\n      value: provider.nebula.lab11.org\n    volumeMounts:\n    - name: certs\n      readOnly: true\n      mountPath: /certs\n    stdin: false\n    tty: false\n  volumes:\n  - name: certs\n    hostPath:\n      path: /tmp/certs\n  restartPolicy: Always\n"
+  }
+  metadata_startup_script = <<-EOF
+    echo "${docker_image.galaxy_cloud.repo_digest}" > /tmp/docker_image_name.txt
+    mkdir -p /tmp/certs
+    echo "${acme_certificate.appserver_cert.certificate_pem}${acme_certificate.appserver_cert.issuer_pem}" > /tmp/certs/cert.pem
+    echo "${tls_private_key.appserver_private_key.private_key_pem}" > /tmp/certs/key.pem
+  EOF
+
+  service_account {
+    email = "1064507374211-compute@developer.gserviceaccount.com"
+    scopes = [
+      "https://www.googleapis.com/auth/devstorage.read_only", "https://www.googleapis.com/auth/logging.write", "https://www.googleapis.com/auth/monitoring.write", "https://www.googleapis.com/auth/service.management.readonly", "https://www.googleapis.com/auth/servicecontrol", "https://www.googleapis.com/auth/trace.append"
+    ]
   }
 }
 
-resource "google_cloud_run_service_iam_policy" "appserver-1-noauth" {
-  location = google_cloud_run_v2_service.appserver-1.location
-  project  = google_cloud_run_v2_service.appserver-1.project
-  service  = google_cloud_run_v2_service.appserver-1.name
+// --- Set up DNS records ---
 
-  policy_data = data.google_iam_policy.noauth.policy_data
+variable "lab11_zone_id" {
+  type = string
+  default = "Z01723792SFGQ2BMKSLRW"
 }
 
-// Redis
-resource "google_compute_address" "galaxy-redis" {
-  name = "galaxy-redis-ip"
-  subnetwork = google_compute_subnetwork.galaxy_net.id
-  address_type = "INTERNAL"
+resource "aws_route53_record" "provider_record" {
+  zone_id = var.lab11_zone_id
+  name    = "provider.nebula.lab11.org"
+  type    = "A"
+  ttl     = "300"
+  records = [google_compute_instance.lab11_provider.network_interface.0.access_config.0.nat_ip]
 }
 
-resource "google_redis_instance" "galaxy-redis" {
-  name = "galaxy-redis"
-  memory_size_gb = 1
-
-  region = var.default_region
-  authorized_network = google_compute_network.galaxy_net.id
-  tier = "STANDARD_HA"
-  redis_version = "REDIS_4_0"
-  reserved_ip_range = google_compute_address.galaxy-redis.address
-}
-
-resource "google_compute_firewall" "galaxy-redis-fw" {
-  name = "galaxy-redis-fw"
-  network = google_compute_network.galaxy_net.id
-  allow {
-    protocol = "tcp"
-    ports = ["6379"]
-  }
-  source_tags = ["galaxy-redis"]
-  target_tags = ["galaxy-redis"]
-}
-
-// VPC configuration
-resource "google_vpc_access_connector" "galaxy_connector" {
-  name   = "galaxy-connector"
-  subnet {
-    name = google_compute_subnetwork.galaxy_net.name
-  }     
-  machine_type = "e2-micro"
-  region       = var.default_region
-  min_instances = 2
-  max_instances = 3
-}
-
-resource "google_compute_subnetwork" "galaxy_net" {
-  name          = "galaxy-subnet"
-  ip_cidr_range = "10.0.1.0/24"
-  region        = var.default_region
-  network       = google_compute_network.galaxy_net.id
-}
-
-resource "google_compute_network" "galaxy_net" {
-  name                    = "galaxy-net"
-  auto_create_subnetworks = false
+resource "aws_route53_record" "appserver_record" {
+  zone_id = var.lab11_zone_id
+  name    = "app.nebula.lab11.org"
+  type    = "A"
+  ttl     = "300"
+  records = [google_compute_instance.lab11_app_server.network_interface.0.access_config.0.nat_ip]
 }
