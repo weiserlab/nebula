@@ -36,8 +36,18 @@ ENV SERVER_MODE=provider
 
 # Start the Uvicorn server with the specified server mode
 CMD if [ "$SERVER_MODE" = "provider" ] ; then \
-        uvicorn main:app --host 0.0.0.0 --port $SERVER_PORT --ssl-keyfile=/certs/key.pem --ssl-certfile=/certs/cert.pem --workers 4; \
+        # if SERVER_TLS is true, start the server with TLS
+        if [ "$SERVER_TLS" = "true" ] ; then \
+            uvicorn main:app --host 0.0.0.0 --port $SERVER_PORT --ssl-keyfile=/certs/key.pem --ssl-certfile=/certs/cert.pem --workers 1; \
+        # otherwise, start the server without TLS
+        else \
+            uvicorn main:app --host 0.0.0.0 --port $SERVER_PORT --workers 1; \
+        fi \
     else \
-        uvicorn main:app --host 0.0.0.0 --port $SERVER_PORT --ssl-keyfile=/certs/key.pem --ssl-certfile=/certs/cert.pem --workers 4; \
+        if [ "$SERVER_TLS" = "true" ] ; then \
+            uvicorn main:app --host 0.0.0.0 --port $SERVER_PORT --ssl-keyfile=/certs/key.pem --ssl-certfile=/certs/cert.pem --workers 1; \
+        else \
+            uvicorn main:app --host 0.0.0.0 --port $SERVER_PORT --workers 1; \
+        fi \
     fi
 

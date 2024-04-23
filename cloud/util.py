@@ -1,22 +1,23 @@
 # util.py
 import base64
-from Crypto.Hash import SHA256
-from Crypto.PublicKey import ECC
-from Crypto.Cipher import AES
-from Crypto.Random import get_random_bytes
-from Crypto.Signature import DSS
+from Crypto.Hash import SHA256 # type: ignore
+from Crypto.PublicKey import ECC # type: ignore
+from Crypto.Cipher import AES # type: ignore
+from Crypto.Random import get_random_bytes # type: ignore
+from Crypto.Signature import DSS # type: ignore
+import struct
 
 
-PUBLIC_ECC_KEYFILE = 'jl-public-ecc.pem'
-PRIVATE_ECC_KEYFILE = 'jl-private-ecc.pem'
-AES_KEYFILE = 'jl-aes.key'
+PUBLIC_ECC_KEYFILE = 'appserver-public-ecc.pem'
+PRIVATE_ECC_KEYFILE = 'appserver-private-ecc.pem'
+AES_KEYFILE = 'appserver-aes.key'
 
 
-def encode_bytes(data: bytes) -> str:
+def encode_bytes_b64(data: bytes) -> str:
     return base64.b64encode(data).decode('utf-8')
 
 
-def decode_bytes(data: str) -> bytes:
+def decode_bytes_b64(data: str) -> bytes:
     return base64.b64decode(data)
 
 
@@ -33,13 +34,22 @@ def gen_keys():
         f.write(key)
 
 
-def load_public_key():
-    with open(PUBLIC_ECC_KEYFILE, 'r') as f:
+def gen_keypair(name):
+    key = ECC.generate(curve='secp256r1')
+    with open(name + '-public-ecc.pem', 'w') as f:
+        f.write(key.public_key().export_key(format='PEM'))
+
+    with open(name + '-private-ecc.pem', 'w') as f:
+        f.write(key.export_key(format='PEM'))
+
+
+def load_public_key(name=PUBLIC_ECC_KEYFILE):
+    with open(name, 'r') as f:
         return ECC.import_key(f.read())
 
 
-def load_private_key():
-    with open(PRIVATE_ECC_KEYFILE, 'r') as f:
+def load_private_key(name=PRIVATE_ECC_KEYFILE):
+    with open(name, 'r') as f:
         return ECC.import_key(f.read())
 
 
@@ -48,17 +58,17 @@ def load_aes_key():
         return f.read()
 
 
-def hash(_data):
+def hash_sha256(_data):
     hash_object = SHA256.new(data=_data)
     return hash_object.digest()
 
 
-def sign(secretkey, message):
+def sign_ecdsa(secretkey, message):
     h = SHA256.new(message)
     return DSS.new(secretkey, 'fips-186-3').sign(h)
 
 
-def verify(publickey, message, signature):
+def verify_ecdsa(publickey, message, signature):
     h = SHA256.new(message)
     try:
         verifier = DSS.new(publickey, 'fips-186-3')
@@ -68,14 +78,18 @@ def verify(publickey, message, signature):
         return False
 
 
-def encrypt_aes(key, data):
+def encrypt_aes(key, data) -> bytes:
     nonce = get_random_bytes(12)
     cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
     ciphertext, tag = cipher.encrypt_and_digest(data)
-    return nonce, ciphertext, tag
+
+    ct_bytes, tag_bytes = len(ciphertext), len(tag)
+    return struct.pack(f'II12s{ct_bytes}s{tag_bytes}s', ct_bytes, tag_bytes, nonce, ciphertext, tag)
 
 
-def decrypt_aes(key, nonce, ciphertext, tag):
+def decrypt_aes(key, encrypted_blob):
+    ct_bytes, tag_bytes, nonce = struct.unpack_from('II12s', encrypted_blob, offset=0)
+    ciphertext, tag = struct.unpack_from(f'{ct_bytes}s{tag_bytes}s', encrypted_blob, offset=(2*4 + 12))
     try:
         cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
         return cipher.decrypt_and_verify(ciphertext, tag)

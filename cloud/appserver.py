@@ -1,26 +1,43 @@
 # app.py
+import config
 import json
 import os
 import requests
-import tokenlib
+import tokenlib # type: ignore
 import util
+import payloads
 
+# number of tokens to request from the provider at one time, increase if you're
+# expecting a lot of traffic
+TOKEN_REQUEST_SIZE = 10
 
-TOKEN_REQUEST_SIZE = 100
+# -- App Server State --
+provider_url = os.environ.get('PROVIDER_URL') 
+use_tls = os.environ.get('SERVER_TLS') == 'true'
 
-
-provider_url = os.environ.get("PROVIDER_URL") 
+# public parameters for token generation
 public_params = None
+# list of unused tokens to be handed out to mules
 unused_tokens = []
-payload_hashes = set()
+# set of observed payload hashes
+seen_hashes = set()
+# map of sensor ID -> public ECDSA key. Here we just have one sensor with a known id-key pair
+sensor_public_keys = {
+    bytes.fromhex('ffffffffffffffffffffffffffffff01'): util.load_public_key('sensor-public-ecc.pem')
+}
+# map of pending data hashes -> [nonce, token] pairs
+pending_deliveries = {}
 
 
 def get_public_params() -> bytes:
-    return requests.get(provider_url + "/public_params", verify=False).json()["result"]
+    return payloads.PublicParams.deserialize(
+        requests.get(provider_url + '/public_params', verify=use_tls).content
+    )
 
 
-# a function get_more_tokens that makes a GET request and atomically adds them to unused_tokens
-def get_more_tokens(num_tokens: int) -> list[str]:
+# ALGORITHM 1: TOKEN PURCHASE
+# make a request to provider for more tokens
+def get_more_tokens(num_tokens: int) -> list[bytes]:
 
     global public_params
 
@@ -28,71 +45,91 @@ def get_more_tokens(num_tokens: int) -> list[str]:
     if not public_params:
         public_params = get_public_params()
 
-    blinded_tokens = [
-        util.encode_bytes(tokenlib.generate_token(util.decode_bytes(public_params))) for _ in range(num_tokens)
-    ]
+    blinded_tokens = [tokenlib.generate_token(public_params) for _ in range(num_tokens)]
+    blinded_token_bytes = payloads.TokenList.serialize(blinded_tokens)
+    signed_tokens = payloads.TokenList.deserialize(
+        requests.post(
+            provider_url + '/sign_tokens',
+            verify=use_tls,
+            headers = {'Content-type': 'application/octet-stream'},
+            data=blinded_token_bytes
+        ).content
+    )
 
-    signed_tokens = [util.decode_bytes(t) for t in requests.post(
-        provider_url + "/sign_tokens",
-        verify=False,
-        headers = {'Content-type': 'application/json'},
-        data=json.dumps({"blinded_tokens": blinded_tokens})
-    ).json()["result"]]
+    return [tokenlib.unblind_token(b_token, s_token) for b_token, s_token in zip(blinded_tokens, signed_tokens)]
 
-    return [
-        util.encode_bytes(tokenlib.unblind_token(util.decode_bytes(b_token), s_token)) for b_token, s_token in \
-            zip(blinded_tokens, signed_tokens)
-    ]
-    
 
-def deliver(payload) -> str:
+# ALGORITHM 2(a): PAYLOAD DELIVERY (HASH PAYLOAD)
+def deliver_hash_payload(payload) -> str:
 
-    global public_params
     global unused_tokens
     global provider_url
+    global seen_hashes 
+    global sensor_public_keys
+    global pending_deliveries
 
-    # if unused_tokens is empty, get more tokens
+    p_hash, sig_hash = payloads.SignedHashPayload.deserialize(payload)
+    sensor_id, data_hash = payloads.HashPayload.deserialize(p_hash)
+    print(f'data_hash: {util.encode_bytes_b64(data_hash)}')
+
+    # if the payload hash is already in the set of payload hashes, abort by returning nothing
+    if data_hash in seen_hashes:
+        print(f'Payload hash already seen: {util.encode_bytes_b64(data_hash)}')
+        return None
+
+    # verify the signature, abort if it fails
+    if sensor_id not in sensor_public_keys:
+        print(f'Unknown sensor ID: {sensor_id}')
+        return None
+        
+    if not util.verify_ecdsa(sensor_public_keys[sensor_id], p_hash, sig_hash):
+        print(f'Invalid signature for sensor ID: {sensor_id}')
+        return None
+
+    # generate random nonce and get an unused token
+    protocol_nonce = util.get_random_bytes(config.DELIVER_NONCE_BYTES)
     if len(unused_tokens) == 0:
         unused_tokens += get_more_tokens(TOKEN_REQUEST_SIZE)
+    token = unused_tokens.pop()
 
-    ret_token = util.decode_bytes(unused_tokens.pop())
-    protocol_nonce_bytes = 16
-    protocol_nonce = util.get_random_bytes(protocol_nonce_bytes)
-
-    ret_sig = util.sign(util.load_private_key(), protocol_nonce + ret_token)
-    
-    return util.encode_bytes(protocol_nonce + ret_token + ret_sig)
-
-
-def pre_deliver(payload) -> str:
-
-    global public_params
-    global unused_tokens
-    global provider_url
-    global payload_hashes
-
-    payload_bytes = util.decode_bytes(payload["data"])
-
-    protocol_nonce_bytes = 16
-    sha256_bytes = 32
-
-    sensor_id = payload_bytes[:16]
-    payload_hash = payload_bytes[16:16+sha256_bytes]
-    sig = payload_bytes[16+sha256_bytes:]
-
-    is_in_set = payload_hash in payload_hashes
-
-    protocol_nonce = util.get_random_bytes(protocol_nonce_bytes)
-    
-    if len(unused_tokens) == 0:
-        unused_tokens += get_more_tokens(TOKEN_REQUEST_SIZE)
+    pending_deliveries[data_hash] = [protocol_nonce, token]
 
     aes_key = util.load_aes_key()
-    token = util.decode_bytes(unused_tokens.pop())
     encrypted_token = util.encrypt_aes(aes_key, token)
-    encrypted_token_bytes = encrypted_token[0] + encrypted_token[1] + encrypted_token[2]
 
-    return_payload = protocol_nonce + payload_hash + encrypted_token_bytes
-    return_sig = util.sign(util.load_private_key(), return_payload)
+    payload = payloads.PredeliveryPayload.serialize(protocol_nonce, data_hash, encrypted_token)
+    sig = util.sign_ecdsa(util.load_private_key(), payload)
+    return payloads.SignedPredeliveryPayload.serialize(
+        payload, sig
+    )
 
-    return util.encode_bytes(return_payload + return_sig)
+
+# ALGORITHM 2(b) PAYLOAD DELIVERY (DATA PAYLOAD) 
+def deliver_data(payload) -> str:
+
+    global pending_deliveries
+
+    # Yay! We can do something with the data now!
+    data = payloads.Data.deserialize(payload)
+
+    # hash the data payload and check if it's in the set of pending payload hashes
+    data_hash = util.hash_sha256(data)
+    if data_hash not in pending_deliveries:
+        print(f'Unknown data hash: {util.encode_bytes_b64(data_hash)}')
+        return None
+    
+    # get the nonce and token from the pending deliveries
+    nonce, token = pending_deliveries[data_hash]
+    del pending_deliveries[data_hash]
+
+    token_payload = payloads.TokenPayload.serialize(nonce, token, data_hash)
+    return payloads.SignedTokenPayload.serialize(
+        token_payload, util.sign_ecdsa(util.load_private_key(), token_payload)
+    )
+
+
+# ALGORITHM 4(c): RECEIVE COMPLAINT DATA
+def deliver_complaint_data(payload) -> bool: 
+    # Yay! We can do something with the complaint data now!
+    complaint_data = payloads.Data.serialize(payload)
+    return b''

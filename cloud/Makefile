@@ -41,3 +41,4 @@ destroy-remote:
 keypair:
 	maturin develop --manifest-path anonymous-tokens-lib/Cargo.toml --release
 	python gen_keypair.py
+	python gen_credentials.py

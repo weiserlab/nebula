@@ -1,1 +1,4 @@
 *.db
+*.bin
+*.key
+*.pem

@@ -21,7 +21,6 @@ sudo apt-get install redis
 * pip install cryptography
 * payload structure is as follows: IV (12 bytes) || Ciphertext || Authentication Tag (16 bytes).
 
-
 ## Build instructions
 
 Use the included `Makefile` to run the provider and application servers in various configurations.
@@ -42,6 +41,8 @@ Running locally uses Terraform to spin up some Docker containers. See `tf/local/
 
 ### GCP
 
+*NOTE*: GCP instructions are old and likely kinda broken -- try at your own risk :)
+
 The provider and application servers run as GCP Cloud Run services at the following URLs:
 
 * Provider: `https://provider-vavytk2tca-uc.a.run.app`
@@ -58,116 +59,6 @@ Then you'll be able to deploy the services (note: the API will be publicly acces
  * `make remote`: Tags the galaxy docker image and pushes it to the Google Container Registry, then starts the services using Terraform.
  * `make destroy-local`: shuts down Terraform-instantiated services.
 
-## API
+## Test Script
 
-### Provider
-
-    * `GET /public_params`
-        Params: (none)
-        Body:   (none)
-
-        Returns:
-            {
-                "result": <encoded public parameter str>
-            }
-
-    * `GET /complaint_public_params`
-        Params: (none)
-        Body:   (none)
-
-        Returns:
-            {
-                "result": <encoded complaint public parameter str (diff. from above)>
-            }
-
-    * `POST /sign_tokens`
-        Params: (none)
-        Body: 
-            Content-type: application/json
-            {
-                "mode": <either "data" or "complaint">,
-                "blinded_tokens": [<encoded blinded token strs>]
-            }
-
-        Returns:
-            {
-                "result": [<encoded signed token strs>]
-            }
-            
-        // If the mode is "data", then the provider uses the normal keypair to sign all the tokens. If the mode is "complaint", then the provider uses the complaint keypair to sign UP TO <X> tokens (let's say, 100). Assume we check identity, which we don't rn.
-
-    * `POST /redeem_tokens`
-        Params: (none)
-        Body:
-            Content-type: application/json
-            {
-                "tokens": [<encoded token strs>]
-            }
-
-        Returns:
-            {
-                "result": <number valid tokens>
-            }
-
-    * `POST /query_provider`
-        Params: (none)
-        Body:
-            Content-type: application/json
-            {
-                "tokens": [<encoded token strs>]
-            }
-
-        Returns:
-            {
-                "result": {
-                    "invalid_tokens": [...],
-                    "duplicate_tokens": [...]
-                }
-            }
-            
-    * `POST /complain`
-        Params: (none)
-        Body:
-            Content-type: application/json
-            {
-                "token": <encoded token str>,
-                "blinded_token": <encoded token str>,
-                "complaint": <encoded complaint bytes, not important>,
-                "payload": <bytes, might be empty>,
-                "sig": <bytes, might be empty>
-            }
-
-        Returns:
-            {
-                "result": <signed token or empty>
-            }
-            
-        // Verifies that the token was signed correctly using the complaint key and calls some function that processes the data bytes
-
-### Application Server
-
-    * `POST /predeliver`
-        Params: (none)
-        Body:
-            Content-type: application/json
-            {
-                "data": <predeliver data>
-            }
-
-        Returns:
-            {
-                "result": <encoded response bytes>
-            }
-
-    * `POST /deliver`
-        Params: (none)
-        Body:
-            Content-type: application/json
-            {
-                "data": <payload data>
-            }
-
-        Returns:
-            {
-                "result": <encoded token payload>
-            }
+For an example of how to interact with a provider-appserver pair running in local containers, look at the `test_mule.py` script.

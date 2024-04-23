@@ -35,7 +35,9 @@ resource "docker_container" "galaxy_provider" {
   tty   = true
   env   = [
     "SERVER_PORT=${var.provider_port}",
-    "SERVER_MODE=provider"
+    "SERVER_MODE=provider",
+    "SERVER_TLS=false",
+    "APPSERVER_URL=http://appserver:${var.appserver_port}"
   ]
   networks_advanced {
     name = docker_network.galaxy_net.name
@@ -55,7 +57,8 @@ resource "docker_container" "galaxy_appserver" {
   env   = [
     "SERVER_PORT=${var.appserver_port}",
     "SERVER_MODE=app",
-    "PROVIDER_URL=http://${docker_container.galaxy_provider.name}:${var.provider_port}"
+    "SERVER_TLS=false",
+    "PROVIDER_URL=http://provider:${var.provider_port}"
   ]
   networks_advanced {
     name = docker_network.galaxy_net.name
